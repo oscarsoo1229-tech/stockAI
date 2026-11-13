@@ -1,0 +1,10 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+[project]
+name = "stockai-research"
+version = "0.1.0"
+description = "Windows desktop stock research application"
+requires-python = ">=3.13,<3.14"
+[tool.setuptools.packages.find]
+include = ["stockai*"]

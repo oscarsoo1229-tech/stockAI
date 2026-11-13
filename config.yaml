@@ -1,0 +1,12 @@
+mode: ANALYSIS
+live_trading_enabled: false
+default_provider: Mock
+default_market: KOSPI
+default_symbol: "005930"
+interval: 1d
+training:
+  sequence_length: 60
+  batch_size: 64
+  epochs: 20
+  learning_rate: 0.0001
+  device: Auto

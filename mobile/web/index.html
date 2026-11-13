@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#101827">
+  <title>StockAI</title>
+  <link rel="manifest" href="/app.webmanifest">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<header><strong>StockAI</strong><span id="mode"></span></header>
+<main>
+  <p id="status" role="status"></p>
+  <p id="server-status"></p>
+  <section id="controls">
+    <button id="next" hidden>다음 모의 봉</button>
+    <button id="enable">알림 켜기</button>
+    <button id="test">테스트 알림</button>
+    <a href="/api/samples.csv">분석 표본 CSV 다운로드</a>
+  </section>
+  <section><h1>관심 종목</h1><div id="stocks"></div></section>
+  <details><summary>관심 종목 추가</summary>
+    <form id="watch">
+      <label>시장<select name="market"><option>KOSPI</option><option>KOSDAQ</option><option>NASDAQ</option><option>NYSE</option></select></label>
+      <label>종목 코드<input name="symbol" required maxlength="12" autocapitalize="characters" placeholder="AAPL"></label>
+      <label>기업명 또는 뉴스 검색어<input name="query" required maxlength="80" placeholder="애플"></label>
+      <label>DART 고유번호 (선택)<input name="dart_code" pattern="[0-9]{8}" inputmode="numeric"></label>
+      <label>SEC CIK (선택)<input name="sec_cik" pattern="[0-9]{1,10}" inputmode="numeric"></label>
+      <button>저장</button>
+    </form>
+  </details>
+  <section><h2>최근 알림</h2><ul id="events"></ul></section>
+</main>
+</body>
+</html>
