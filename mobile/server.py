@@ -218,7 +218,7 @@ WEB = Path(__file__).with_name("web")
 private = APIRouter(dependencies=[Depends(authenticate)])
 
 
-@app.get("/healthz")
+@app.api_route("/healthz", methods=["GET", "HEAD"])
 def health():
     if app.state.monitor_task.done():
         return Response(status_code=503)
