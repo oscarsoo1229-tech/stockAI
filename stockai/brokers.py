@@ -80,10 +80,12 @@ class TossBroker:
                 raise BrokerError(self._safe_error(exc)) from exc
         raise BrokerError("Rate limit retry limit reached")
 
-    def candles(self, symbol, interval="1d", count=200):
+    def candles(self, symbol, interval="1d", count=200, before=None):
         count = max(1, min(200, int(count)))
-        result = self.request("/api/v1/candles", {"symbol": symbol, "interval": interval,
-                                                   "count": count, "adjusted": "true"})
+        params = {"symbol": symbol, "interval": interval, "count": count, "adjusted": "true"}
+        if before:
+            params["before"] = before
+        result = self.request("/api/v1/candles", params)
         return result["candles"], result.get("nextBefore")
 
     def stocks(self, market):
