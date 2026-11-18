@@ -57,7 +57,8 @@ def market_snapshot(broker, item, demo_step=0, record=None):
         "factors": view["factors"], "return_20d": view["return_20d"],
         "rsi": rsi if pd.notna(rsi) else None,
         "volume_ratio": volume_ratio if pd.notna(volume_ratio) else None,
-        "bars": [{"date": day.date().isoformat(), "close": float(row.close), "volume": float(row.volume)}
+        "bars": [{"date": day.date().isoformat(), "open": float(row.open), "high": float(row.high),
+                  "low": float(row.low), "close": float(row.close), "volume": float(row.volume)}
                  for day, row in bars.tail(60).iterrows()],
     }
 

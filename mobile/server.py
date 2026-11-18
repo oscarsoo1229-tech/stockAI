@@ -11,7 +11,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from stockai.brokers import TossBroker
 from .feeds import dart, market_snapshot, news, sec
+from .intraday import MinuteFeed
 from .samples import create_table, export_csv, record_and_score
 
 LOG = logging.getLogger("stockai.mobile")
@@ -203,6 +204,9 @@ async def lifespan(_app):
                    "results": {}, "events": [], "step": -1}
         db.execute("INSERT OR IGNORE INTO state VALUES (1, ?)", (json.dumps(default),))
     _app.state.monitor_status = {"status": "첫 갱신 대기"}
+    chart_broker = None if DEMO else TossBroker(os.environ["STOCKAI_TOSS_CLIENT_ID"],
+                                              os.environ["STOCKAI_TOSS_CLIENT_SECRET"])
+    _app.state.minute_feed = MinuteFeed(chart_broker)
     task = asyncio.create_task(monitor())
     _app.state.monitor_task = task
     try:
@@ -210,6 +214,8 @@ async def lifespan(_app):
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+        if chart_broker:
+            chart_broker.close()
 
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
@@ -218,7 +224,7 @@ WEB = Path(__file__).with_name("web")
 private = APIRouter(dependencies=[Depends(authenticate)])
 
 
-@app.api_route("/healthz", methods=["GET", "HEAD"])
+@app.get("/healthz")
 def health():
     if app.state.monitor_task.done():
         return Response(status_code=503)
@@ -249,6 +255,14 @@ def dashboard():
     return {**state, "demo": DEMO, "monitor": app.state.monitor_status,
             "push_key": PUBLIC_KEY if PRIVATE_KEY and CONTACT else "",
             "news_enabled": DEMO or bool(os.getenv("NAVER_CLIENT_ID") and os.getenv("NAVER_CLIENT_SECRET"))}
+
+
+@private.get("/api/chart/{key}")
+def intraday(key: str, minutes: int = Query(1, ge=1, le=60)):
+    item = read_state()["watch"].get(key)
+    if not item:
+        raise HTTPException(404, "관심 종목을 확인하세요.")
+    return app.state.minute_feed.read(item["market"], item["symbol"], minutes)
 
 
 @private.get("/api/samples.csv")

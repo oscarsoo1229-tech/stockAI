@@ -3,36 +3,54 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#101827">
+  <meta name="theme-color" content="#101929">
   <title>StockAI</title>
   <link rel="manifest" href="/app.webmanifest">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css">
-  <script src="/app.js" defer></script>
+  <link rel="stylesheet" href="/style.css?v=5">
+  <script src="/app.js?v=5" defer></script>
 </head>
 <body>
-<header><strong>StockAI</strong><span id="mode"></span></header>
+<header class="top"><div class="top-inner"><a class="brand" href="/"><img src="/icon-192.png" width="40" height="40" alt=""><strong>StockAI</strong></a><span id="mode" class="mode"></span></div></header>
 <main>
+  <div class="page-heading"><div><h1>시장 대시보드</h1><p id="server-status"></p></div><button id="next" class="primary" hidden>다음 모의 일봉 <span aria-hidden="true">→</span></button></div>
   <p id="status" role="status"></p>
-  <p id="server-status"></p>
-  <section id="controls">
-    <button id="next" hidden>다음 모의 봉</button>
-    <button id="enable">알림 켜기</button>
-    <button id="test">테스트 알림</button>
-    <a href="/api/samples.csv">분석 표본 CSV 다운로드</a>
-  </section>
-  <section><h1>관심 종목</h1><div id="stocks"></div></section>
-  <details><summary>관심 종목 추가</summary>
+  <div class="workspace">
+  <aside>
+  <section class="panel sidebar"><h2>관심 종목</h2><div id="watchlist"></div>
+  <details class="add"><summary>+ 관심 종목 추가</summary>
     <form id="watch">
       <label>시장<select name="market"><option>KOSPI</option><option>KOSDAQ</option><option>NASDAQ</option><option>NYSE</option></select></label>
       <label>종목 코드<input name="symbol" required maxlength="12" autocapitalize="characters" placeholder="AAPL"></label>
       <label>기업명 또는 뉴스 검색어<input name="query" required maxlength="80" placeholder="애플"></label>
       <label>DART 고유번호 (선택)<input name="dart_code" pattern="[0-9]{8}" inputmode="numeric"></label>
       <label>SEC CIK (선택)<input name="sec_cik" pattern="[0-9]{1,10}" inputmode="numeric"></label>
-      <button>저장</button>
+      <button class="primary">저장</button>
     </form>
   </details>
-  <section><h2>최근 알림</h2><ul id="events"></ul></section>
+  </section>
+  <section class="panel sidebar" id="controls"><h2>알림 및 데이터</h2>
+    <button id="enable" disabled>알림 켜기</button>
+    <button id="test" disabled>테스트 알림</button>
+    <a class="download" href="/api/samples.csv">분석 표본 CSV 다운로드 <span aria-hidden="true">↓</span></a>
+  </section>
+  </aside>
+  <div class="content">
+    <section class="panel price-panel" id="price-panel" hidden>
+      <div class="chart-heading"><h2 id="plot-title">가격 · 거래량</h2><span id="chart-zone" class="ticker"></span></div>
+      <div class="chart-options">
+        <label>봉 주기<select id="interval"><option value="1">1분봉</option><option value="2">2분봉</option><option value="5">5분봉</option><option value="15">15분봉</option><option value="30">30분봉</option><option value="60">60분봉</option><option value="custom">직접 입력</option><option value="day">일봉</option></select></label>
+        <form id="custom-form" hidden><label>사용자 지정 (분)<input id="custom-minutes" type="number" min="1" max="60" step="1" inputmode="numeric" required value="3"></label><button>적용</button></form>
+        <label>분봉 갱신<select id="cadence"><option value="1">1초</option><option value="2" selected>2초</option><option value="5">5초</option></select></label>
+        <label>표시 범위<select id="range"><option value="20">최근 20봉</option><option value="40">최근 40봉</option><option value="60" selected>최근 60봉</option></select></label>
+      </div>
+      <div class="chart-panel"><p class="chart-readout" id="chart-readout"></p><canvas id="price-chart" tabindex="0" aria-label="가격과 거래량. 좌우 화살표로 봉 선택"></canvas></div>
+      <p class="ticker" id="chart-note" role="status"></p>
+    </section>
+    <section id="stocks" aria-label="종목 상세"></section>
+    <section class="panel event-panel"><h2>최근 알림</h2><ul id="events"></ul></section>
+  </div>
+  </div>
 </main>
 </body>
 </html>
