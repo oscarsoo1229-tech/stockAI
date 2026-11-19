@@ -124,22 +124,32 @@ def indicators(frame, period=14):
     })
 
 
+def score_factors(frame, tech, index):
+    last, previous, close = tech.iloc[index], tech.iloc[index - 1], frame.close.iloc[index]
+    volume_ratio = float(last["Volume Spike"])
+    return {
+        "단기·중기 추세": 2 if last.SMA > last["Ichimoku Kijun"] else -2,
+        "MACD 흐름": 1 if last.MACD > 0 and last.MACD >= previous.MACD else -1,
+        "상대강도": 1 if 45 <= last.RSI <= 68 else (-1 if last.RSI > 75 or last.RSI < 30 else 0),
+        "거래량 변화": 1 if volume_ratio >= 1.5 and close > frame.close.iloc[index - 1] else 0,
+        "변동성 위험": -1 if last.ATR / close > .06 else 0,
+    }
+
+
+def signal_label(score):
+    return "관심 후보" if score >= 3 else "중립·관망" if score >= 0 else "주의"
+
+
 def recommendation(frame):
     """Transparent technical score, separate from learned probability estimates."""
     if len(frame) < 55:
         raise ValueError("추세 분석에는 최소 55개 봉이 필요합니다.")
     tech = indicators(frame)
-    last, previous, close = tech.iloc[-1], tech.iloc[-2], frame.close.iloc[-1]
+    last = tech.iloc[-1]
     volume_ratio = float(last["Volume Spike"])
-    factors = {
-        "단기·중기 추세": 2 if last.SMA > last["Ichimoku Kijun"] else -2,
-        "MACD 흐름": 1 if last.MACD > 0 and last.MACD >= previous.MACD else -1,
-        "상대강도": 1 if 45 <= last.RSI <= 68 else (-1 if last.RSI > 75 or last.RSI < 30 else 0),
-        "거래량 변화": 1 if volume_ratio >= 1.5 and frame.close.iloc[-1] > frame.close.iloc[-2] else 0,
-        "변동성 위험": -1 if last.ATR / close > .06 else 0,
-    }
+    factors = score_factors(frame, tech, len(frame) - 1)
     score = sum(factors.values())
-    label = "관심 후보" if score >= 3 else "중립·관망" if score >= 0 else "주의"
+    label = signal_label(score)
     return {"score": score, "label": label, "factors": factors,
             "rsi": float(last.RSI), "volume_ratio": volume_ratio,
             "return_20d": float(frame.close.iloc[-1] / frame.close.iloc[-21] - 1),
