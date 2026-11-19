@@ -8,6 +8,7 @@ import sqlite3
 from contextlib import asynccontextmanager, closing
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from urllib.parse import urlsplit
 
 import httpx
@@ -18,6 +19,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from stockai.brokers import TossBroker
+from .discover import create_scan_table, scan_markets, summaries
 from .feeds import dart, market_snapshot, news, sec
 from .intraday import MinuteFeed
 from .samples import create_table, export_csv, record_and_score
@@ -88,63 +90,72 @@ def push(event):
     return delivered
 
 
-def refresh(state):
-    broker = None if DEMO else TossBroker(os.environ["STOCKAI_TOSS_CLIENT_ID"],
-                                           os.environ["STOCKAI_TOSS_CLIENT_SECRET"])
+class MobileBroker(TossBroker):
+    """Share one OAuth token across chart, discovery and watchlist workers."""
+    def __init__(self, client_id, client_secret):
+        super().__init__(client_id, client_secret)
+        self.request_lock = Lock()
+
+    def request(self, *args, **kwargs):
+        with self.request_lock:
+            return super().request(*args, **kwargs)
+
+    def close(self):
+        with self.request_lock:
+            super().close()
+
+
+def refresh(state, broker):
     events = []
     state["step"] += 1
-    try:
-        with httpx.Client(timeout=8, trust_env=not DEMO) as client:
-            for key, item in state["watch"].items():
-                previous = state["results"].get(key, {})
-                current = {**previous, "errors": {}}
+    with httpx.Client(timeout=8, trust_env=not DEMO) as client:
+        for key, item in state["watch"].items():
+            previous = state["results"].get(key, {})
+            current = {**previous, "errors": {}}
+            try:
+                snapshot = market_snapshot(broker, item, state["step"],
+                                           record=lambda bars, signal: record_samples(item, bars, signal))
+                current["market"] = snapshot
+                old_signal = previous.get("market", {}).get("signal")
+                if old_signal and old_signal != snapshot["signal"] and snapshot["signal"] != "관망":
+                    rate = snapshot["hit_rate"]
+                    hit_text = (f" · 5봉 과거 적중률 {rate['percent']}% ({rate['hits']}/{rate['samples']}건)"
+                                if rate and rate["percent"] is not None else " · 적중률 표본 부족")
+                    events.append({"title": item["symbol"] + " · " + snapshot["signal"],
+                                   "body": f"기술 점수 {snapshot['score']:+d} · 기준 {snapshot['asof'][:10]}" + hit_text})
+            except Exception:
+                current["errors"]["market"] = "시세 업데이트 실패"
+            sources = []
+            if DEMO:
+                batch = state["step"] // 5
+                sources.append(("소식", lambda *_: [{
+                    "title": f"모의 소식 · {item['query']} 거래량 관찰 #{batch}",
+                    "date": str(current.get("market", {}).get("asof", ""))[:10],
+                    "url": f"#demo-{batch}",
+                }]))
+            elif os.getenv("NAVER_CLIENT_ID") and os.getenv("NAVER_CLIENT_SECRET"):
+                sources.append(("소식", news))
+            if not DEMO and item["dart_code"] and os.getenv("DART_API_KEY"):
+                sources.append(("공시", dart))
+            if not DEMO and item["sec_cik"] and os.getenv("SEC_USER_AGENT"):
+                sources.append(("공시", sec))
+            for category, feed in sources:
                 try:
-                    snapshot = market_snapshot(broker, item, state["step"],
-                                               record=lambda bars, signal: record_samples(item, bars, signal))
-                    current["market"] = snapshot
-                    old_signal = previous.get("market", {}).get("signal")
-                    if old_signal and old_signal != snapshot["signal"] and snapshot["signal"] != "관망":
-                        rate = snapshot["hit_rate"]
-                        hit_text = (f" · 5봉 과거 적중률 {rate['percent']}% ({rate['hits']}/{rate['samples']}건)"
-                                    if rate and rate["percent"] is not None else " · 적중률 표본 부족")
-                        events.append({"title": item["symbol"] + " · " + snapshot["signal"],
-                                       "body": f"기술 점수 {snapshot['score']:+d} · 기준 {snapshot['asof'][:10]}" + hit_text})
+                    articles = feed(client, item)
+                    seen_key = category + "_seen"
+                    seen = previous.get(seen_key, [])
+                    if seen_key in previous:
+                        fresh = [article for article in articles if article["url"] not in seen]
+                        if fresh:
+                            events.append({"title": f"{item['symbol']} · 새 {category} {len(fresh)}건",
+                                           "body": fresh[0]["title"][:180]})
+                    current[category] = articles
+                    current[seen_key] = list(dict.fromkeys(
+                        [article["url"] for article in articles] + seen
+                    ))[:100]
                 except Exception:
-                    current["errors"]["market"] = "시세 업데이트 실패"
-                sources = []
-                if DEMO:
-                    batch = state["step"] // 5
-                    sources.append(("소식", lambda *_: [{
-                        "title": f"모의 소식 · {item['query']} 거래량 관찰 #{batch}",
-                        "date": str(current.get("market", {}).get("asof", ""))[:10],
-                        "url": f"#demo-{batch}",
-                    }]))
-                elif os.getenv("NAVER_CLIENT_ID") and os.getenv("NAVER_CLIENT_SECRET"):
-                    sources.append(("소식", news))
-                if not DEMO and item["dart_code"] and os.getenv("DART_API_KEY"):
-                    sources.append(("공시", dart))
-                if not DEMO and item["sec_cik"] and os.getenv("SEC_USER_AGENT"):
-                    sources.append(("공시", sec))
-                for category, feed in sources:
-                    try:
-                        articles = feed(client, item)
-                        seen_key = category + "_seen"
-                        seen = previous.get(seen_key, [])
-                        if seen_key in previous:
-                            fresh = [article for article in articles if article["url"] not in seen]
-                            if fresh:
-                                events.append({"title": f"{item['symbol']} · 새 {category} {len(fresh)}건",
-                                               "body": fresh[0]["title"][:180]})
-                        current[category] = articles
-                        current[seen_key] = list(dict.fromkeys(
-                            [article["url"] for article in articles] + seen
-                        ))[:100]
-                    except Exception:
-                        current["errors"][category] = f"{category} 업데이트 실패"
-                state["results"][key] = current
-    finally:
-        if broker:
-            broker.close()
+                    current["errors"][category] = f"{category} 업데이트 실패"
+            state["results"][key] = current
     if DEMO:
         for event in events:
             event["title"] = "[모의] " + event["title"]
@@ -160,7 +171,7 @@ lock = asyncio.Lock()
 
 async def update():
     async with lock:
-        return await asyncio.to_thread(refresh, read_state())
+        return await asyncio.to_thread(refresh, read_state(), app.state.broker)
 
 
 async def monitor():
@@ -199,13 +210,16 @@ async def lifespan(_app):
         db.execute("CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY, body TEXT)")
         db.execute("CREATE TABLE IF NOT EXISTS subscriptions (endpoint TEXT PRIMARY KEY, body TEXT)")
         create_table(db)
+        create_scan_table(db)
         default = {"watch": {"KOSPI:005930": {"market": "KOSPI", "symbol": "005930",
                    "query": "삼성전자", "dart_code": "00126380", "sec_cik": ""}},
                    "results": {}, "events": [], "step": -1}
         db.execute("INSERT OR IGNORE INTO state VALUES (1, ?)", (json.dumps(default),))
     _app.state.monitor_status = {"status": "첫 갱신 대기"}
-    chart_broker = None if DEMO else TossBroker(os.environ["STOCKAI_TOSS_CLIENT_ID"],
+    chart_broker = None if DEMO else MobileBroker(os.environ["STOCKAI_TOSS_CLIENT_ID"],
                                               os.environ["STOCKAI_TOSS_CLIENT_SECRET"])
+    _app.state.broker = chart_broker
+    scan = asyncio.create_task(scan_markets(database, chart_broker, read_state))
     _app.state.minute_feed = MinuteFeed(chart_broker)
     task = asyncio.create_task(monitor())
     _app.state.monitor_task = task
@@ -213,7 +227,8 @@ async def lifespan(_app):
         yield
     finally:
         task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        scan.cancel()
+        await asyncio.gather(task, scan, return_exceptions=True)
         if chart_broker:
             chart_broker.close()
 
@@ -252,7 +267,9 @@ def home():
 @private.get("/api/state")
 def dashboard():
     state = read_state()
-    return {**state, "demo": DEMO, "monitor": app.state.monitor_status,
+    with closing(database()) as db:
+        discovery = summaries(db, MODE)
+    return {**state, "discovery": discovery, "demo": DEMO, "monitor": app.state.monitor_status,
             "push_key": PUBLIC_KEY if PRIVATE_KEY and CONTACT else "",
             "news_enabled": DEMO or bool(os.getenv("NAVER_CLIENT_ID") and os.getenv("NAVER_CLIENT_SECRET"))}
 

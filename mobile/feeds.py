@@ -8,7 +8,7 @@ import httpx
 import pandas as pd
 
 from stockai.brokers import TossBroker
-from stockai.data import ZONES, closed_daily, mock, normalize, recommendation
+from stockai.data import ZONES, closed_daily, mock, normalize, recommendation, indicators, score_factors, signal_label
 
 
 def historical_hit_rate(bars, label):
@@ -17,9 +17,10 @@ def historical_hit_rate(bars, label):
         return None
     horizon = 5
     hits = samples = 0
+    tech = indicators(bars)
     end = 55
     while end + horizon <= len(bars):
-        if recommendation(bars.iloc[:end])["label"] != label:
+        if signal_label(sum(score_factors(bars, tech, end - 1).values())) != label:
             end += 1
             continue
         change = bars.close.iloc[end + horizon - 1] - bars.close.iloc[end - 1]
@@ -30,7 +31,7 @@ def historical_hit_rate(bars, label):
             "percent": round(100 * hits / samples) if samples >= 10 else None}
 
 
-def market_snapshot(broker, item, demo_step=0, record=None):
+def daily_bars(broker, item, demo_step=0):
     market, symbol = item["market"], item["symbol"]
     if broker is None:
         sequence = mock(market, symbol)
@@ -47,6 +48,11 @@ def market_snapshot(broker, item, demo_step=0, record=None):
         bars["timestamp"] = pd.to_datetime(bars["timestamp"], utc=True)
         bars["timestamp"] = bars["timestamp"].dt.tz_convert(ZONES[market])
         bars = closed_daily(normalize(bars.set_index("timestamp")), market)
+    return bars
+
+
+def market_snapshot(broker, item, demo_step=0, record=None):
+    bars = daily_bars(broker, item, demo_step)
     view = recommendation(bars)
     signal = {"관심 후보": "매수 관심", "중립·관망": "관망", "주의": "매도 주의"}[view["label"]]
     volume_ratio = view["volume_ratio"]

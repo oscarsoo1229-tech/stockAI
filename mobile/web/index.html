@@ -7,8 +7,8 @@
   <title>StockAI</title>
   <link rel="manifest" href="/app.webmanifest">
   <link rel="apple-touch-icon" href="/icon-192.png">
-  <link rel="stylesheet" href="/style.css?v=5">
-  <script src="/app.js?v=5" defer></script>
+  <link rel="stylesheet" href="/style.css?v=6">
+  <script src="/app.js?v=6" defer></script>
 </head>
 <body>
 <header class="top"><div class="top-inner"><a class="brand" href="/"><img src="/icon-192.png" width="40" height="40" alt=""><strong>StockAI</strong></a><span id="mode" class="mode"></span></div></header>
@@ -36,6 +36,13 @@
   </section>
   </aside>
   <div class="content">
+    <section class="panel price-panel" aria-labelledby="discovery-title">
+      <div class="chart-heading"><h2 id="discovery-title">추천 종목</h2>
+        <label>추천 시장<select id="discovery-market"><option value="all">전체 시장</option><option>KOSPI</option><option>KOSDAQ</option><option>NASDAQ</option><option>NYSE</option></select></label>
+      </div>
+      <p class="ticker" id="discovery-status" role="status"></p>
+      <div id="discovery-list"></div>
+    </section>
     <section class="panel price-panel" id="price-panel" hidden>
       <div class="chart-heading"><h2 id="plot-title">가격 · 거래량</h2><span id="chart-zone" class="ticker"></span></div>
       <div class="chart-options">

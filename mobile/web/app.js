@@ -206,7 +206,66 @@ function metric(parent, label, value, note, tone = "") {
   if (note) element("small", note, box);
 }
 
+let previousDiscovery = "";
+function renderDiscovery() {
+  if (!state) return;
+  const market = byId("discovery-market").value;
+  const all = market === "all";
+  const groups = all ? Object.values(state.discovery || {}) : [state.discovery?.[market]].filter(Boolean);
+  const panel = byId("discovery-list");
+  const status = byId("discovery-status");
+  const stamp = JSON.stringify([market, groups, Object.keys(state.watch), state.demo]);
+  if (stamp === previousDiscovery) return;
+  previousDiscovery = stamp;
+  panel.replaceChildren();
+  const source = state.demo ? "모의 시세" : "토스 보통주";
+  if (!groups.length) { status.textContent = source + " · 시장 분석 준비 중"; return; }
+  const checked = groups.reduce((n, g) => n + g.checked, 0);
+  const total = groups.reduce((n, g) => n + g.total, 0);
+  const failed = groups.reduce((n, g) => n + g.failed, 0);
+  const unavailable = groups.filter(g => g.unavailable).length;
+  const pending = checked < total || unavailable || (all && groups.length < 4);
+  status.textContent = source + " · " + checked + "/" + total + "종목 확인" +
+    (failed ? " · 조회 실패 " + failed + "개" : "") +
+    (unavailable ? " · 시장 목록 재시도 중 " + unavailable + "곳" : "") +
+    (pending ? " · 분석 중" : " · 분석 완료");
+  const rows = groups.flatMap(g => g.rows).sort((a, b) =>
+    b.score - a.score || b.volume_ratio - a.volume_ratio || a.symbol.localeCompare(b.symbol)).slice(0, 5);
+  if (!rows.length) {
+    element("p", checked === failed ? "분석 가능한 일봉을 기다리고 있어요." :
+      "지금까지 확인한 종목 중 매수 관심 기준을 충족한 종목이 없어요.", panel).className = "ticker";
+  }
+  for (const row of rows) {
+    const box = element("div", "", panel);
+    box.className = "candidate";
+    const heading = element("div", "", box);
+    heading.className = "chart-heading";
+    element("strong", row.query + " · " + row.market + " " + row.symbol, heading);
+    element("span", "매수 관심 +" + row.score, heading).className = "signal up";
+    element("p", row.date + " 일봉 · 20봉 수익률 " + row.return_pct + "% · 거래량 " +
+      row.volume_ratio.toFixed(2) + "배", box).className = "ticker";
+    const factors = Object.entries(row.factors).filter(([,score]) => score !== 0)
+      .map(([name,score]) => name + " " + (score > 0 ? "+" : "") + score);
+    element("p", factors.join(" · "), box).className = "ticker";
+    const rate = row.rate;
+    element("p", "5봉 과거 적중률 · " + (rate.percent == null ? "표본 부족" : rate.percent + "%") +
+      " (" + rate.hits + "/" + rate.samples + "건)", box).className = "ticker";
+    const key = row.market + ":" + row.symbol;
+    const tracked = Object.hasOwn(state.watch, key);
+    const full = Object.keys(state.watch).length >= 20;
+    const button = element("button", tracked ? "관심 종목에서 보기" : full ? "관심 종목 20개 등록됨" : "관심 종목에 추가", box);
+    button.disabled = full && !tracked;
+    button.onclick = () => run(async () => {
+      if (!tracked) await api("/api/watch", "POST", {market: row.market, symbol: row.symbol, query: row.query});
+      selected = key;
+      byId("stocks").scrollIntoView({block: "start"});
+    });
+  }
+}
+byId("discovery-market").onchange = renderDiscovery;
+
 function render() {
+  renderDiscovery();
   byId("mode").textContent = state.demo ? "모의 시세" : "토스증권 시세";
   const monitor = state.monitor;
   byId("server-status").textContent = monitor ? "서버 갱신 · " + monitor.status +
